@@ -82,6 +82,7 @@ async def vote_count(ctx):
 
     await game.voteCount(channel)
 
+
 @bot.command(name = 'force-kill')
 async def force_kill(ctx, target):
     player = ctx.author.name
