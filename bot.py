@@ -83,6 +83,13 @@ async def vote_count(ctx):
     await game.voteCount(channel)
 
 
+@bot.command(name = 'vote-count2')
+async def vote_count2(ctx):
+    channel = ctx.channel
+
+    await game.voteCount2(channel)
+
+
 @bot.command(name = 'force-kill')
 async def force_kill(ctx, target):
     player = ctx.author.name
@@ -153,5 +160,12 @@ async def vote_list(ctx):
     channel = ctx.channel
 
     await game.getVoteList(channel)
+
+#testing command (?)
+@bot.command(name = 'vote-dict')
+async def vote_dict(ctx):
+    channel = ctx.channel
+
+    await game.getVoteDict(channel)
 
 bot.run(TOKEN)

@@ -24,7 +24,8 @@ class Game:
         self.teamList = []
         self.roleList = []
         self.voteList = []
-        self.voteTargets = pd.DataFrame(columns = ['Player', 'Votes'])
+        self.runningVotesDict = {'Player':[],'Voters':[]}
+        self.voteCounter = pd.DataFrame(columns = ['Player', 'Votes'])
         self.numTown = 1
         self.numMafia = 1
         self.numDoc = 1
@@ -109,6 +110,7 @@ class Game:
             self.teamList = []
             self.roleList = []
             self.voteList = []
+            self.runningVotesDict = {'Player':[],'Voters':[]}
 
             #Remove game initiator as mafia host
             ###Actually implement Mafia Host role
@@ -227,6 +229,11 @@ class Game:
 
 
     async def phaseChange(self, channel):
+        #Reinitialize daily variables.
+        self.runningVotesDict = {'Player':[],'Voters':[]}
+        for p in self.playerList:
+            p.hasVoted = False
+
         if self.dayCounter > self.nightCounter:
             await self.startNight(channel)
         else:
@@ -247,46 +254,87 @@ class Game:
         #add check player alive
         p = await self.getPlayer(player)
 
-        for v in self.voteList:
-            if (v.voter == player and v.voteDay == self.dayCounter):
-                v.voteTarget = target
-                if not target in self.voteTargets.values:            ############ FIX THIS SHIT
-                    self.voteTargets = self.voteTargets.append(pd.DataFrame({'Player': [target], 'Votes': 1}))   
-                else:
-                    self.voteTargets.loc[self.voteTargets.Player.isin([target]), 'Votes'] += 1
+        #listOfVotes = []
 
-                await channel.send(f'{player} has voted for {v.voteTarget}.')
-    
-        if not await p.checkPlayerVoted():
-            p.hasVoted = True
+        
 
-        #await lynchTarget()
-
-####################################################################
-        async def lynchTarget(self):
-            targetList = []
+        if await p.checkPlayerVoted():
+            await channel.send(f'{player}, you have already voted.  Please *unvote first if you want to change your vote.')
+        else:
 
             for v in self.voteList:
-                if v.voteDay == self.dayCounter and not any(t == v.voteTarget for t in targetList):
-                    targetList.append(v.voteTarget)
+                if (v.voter == player and v.voteDay == self.dayCounter):
+                    v.voteTarget = target
+                    #if not target in self.voteTargets.values:            ############ FIX THIS SHIT
+                    #    self.voteTargets = self.voteTargets.append(pd.DataFrame({'Player': [target], 'Votes': 1}))   
+                    #else:
+                    #    self.voteTargets.loc[self.voteTargets.Player.isin([target]), 'Votes'] += 1
 
-            for target in targetList:
-                targetCounter = 0
-                for v in self.voteList:
-                    if (v.voteTarget == target and v.voteDay == self.dayCounter):
-                        targetCounter += 1
-            
+                    await channel.send(f'{player} has voted for {v.voteTarget}.')
+
+            if not target in self.runningVotesDict['Player']:
+                self.runningVotesDict['Player'].append(target)
+                #listOfVotes.append(player)
+                self.runningVotesDict['Voters'].append([player])
+            elif target in self.runningVotesDict['Player']:
+                index = self.runningVotesDict['Player'].index(target)
+                if not player in self.runningVotesDict['Voters'][index]:
+                    self.runningVotesDict['Voters'][index].append(player)
+                else:
+                    await channel.send(f'{player}, you are already voting for {target}.')
+
+          #################
+
+        #self.voteCounter['Votes'] = self.voteCounter['Votes'].apply(pd.to_numeric)
+  
+        p.hasVoted = True
+
+        await self.voteCount2(channel)
+
+      
+####################################################################          
+
+
+
+    async def getLynchTarget(self, channel):
+
+            #Need to work through more robust lynchTarget logic - include timestamps from votes?
+
+            self.voteCounter['Votes'] = self.voteCounter['Votes'].apply(pd.to_numeric)
+
+            self.lynchTarget = self.voteCounter.loc[self.voteCounter['Votes'].idxmax()]['Player']
+
+            #return self.lynchTarget
+            #await channel.send(f'{self.lynchTarget} is currently up for lynch.')
+
+
+
+
 
     async def removeVote(self, channel, player):
         p = await self.getPlayer(player)
+
+        if not await p.checkPlayerVoted():
+            await channel.send(f'{player}, you have not voted yet.  Please *vote for a player.')
+        else:
+            for v in self.runningVotesDict['Voters']:
+                index = 0
+                if player in v:
+                    v.remove(player)
+                index += 1 
+
+        await self.voteCount2(channel)
+
+        p.hasVoted = False
+
+        await self.getLynchTarget(channel)
 
         for v in self.voteList:
             if (v.voter == player):
                 await channel.send(f'{player} has unvoted for {v.voteTarget}.')
                 v.voteTarget = 'no one'
     
-        if await p.checkPlayerVoted():
-            p.hasVoted = False
+        
 
 
     async def getVoteList(self, channel):
@@ -294,11 +342,19 @@ class Game:
             #await channel.send('A game has not been started yet. Type *play-mafia to start one.')
         #else:
         await channel.send([f'{vote}' for vote in self.voteList])
-        await channel.send(self.voteTargets)
+        
+
+    async def getVoteDict(self, channel):
+        #if self.gameStatus == 'Inactive':
+            #await channel.send('A game has not been started yet. Type *play-mafia to start one.')
+        #else:
+        await channel.send(self.runningVotesDict)
 
     async def voteCount(self, channel):
         #Improve formatting for non-voters
 
+
+##### THIS FUNCTION IS NOW BROKEN
         ## REFACTOR WITH lynchTarget IN newVote
         targetList = []
 
@@ -313,8 +369,46 @@ class Game:
                     targetCounter += 1
             await channel.send(f'{target} ({targetCounter}): ' + ', '.join([v.voter for v in self.voteList if v.voteTarget == target and v.voteDay == self.dayCounter]))
         
-    #async def voteCount2(self, channel):
+
+    async def voteCount2(self, channel):
         #Improve formatting for non-voters
+        self.voteCounter = pd.DataFrame(columns = ['Player', 'Votes'])
+        voteCountOutput = []
+        
+
+        for p in self.runningVotesDict['Player']:
+            index = self.runningVotesDict['Player'].index(p)
+            listOfVoters = self.runningVotesDict['Voters'][index]
+            numVotes = len(listOfVoters)
+
+            self.voteCounter = self.voteCounter.append({'Player': p, 'Votes': pd.to_numeric(numVotes)}, ignore_index = True)
+             
+            voteCountOutput.append(f'{p} ({numVotes}): ' + ', '.join(lov for lov in listOfVoters))
+
+        print('\n'.join(vco for vco in voteCountOutput))
+
+
+
+
+        embed = discord.Embed(
+            title = f'Day {self.dayCounter} Vote Count',
+            color = discord.Color.red()
+        )
+
+        embed.set_footer(text = 'Test votecount footer.')
+        embed.add_field(name = '---------------------------------', value = f'{voteCountOutput}', inline = False)
+
+        await self.getLynchTarget(channel)
+        embed.add_field(name = '---------------------------------', value = f'{self.lynchTarget} is currently up for lynch.', inline = False)
+        
+
+        #for vc in self.voteCounter:
+        #    embed.add_field(name = vc['Player'][0], value = vc['Votes'][0])
+
+        await channel.send(embed = embed)
+
+
+        #await channel.send(f'{self.voteCounter}')
 
         
 
@@ -356,6 +450,7 @@ class Game:
 ### ADD WIN CONDITION CHECKS
 ### ADD FUNCTION FOR CURRENT DAY'S VOTES
 ### NO LYNCH VS NO VOTE
+### TIME STAMP - PYTZ
 
 ### TRACK VOTE CHANGES WITHIN THE SAME DAY
 ### TIME-BASED VOTING LIMIT
