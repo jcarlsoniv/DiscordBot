@@ -30,7 +30,7 @@ async def play_mafia(ctx, numTown = game.numTown, numMafia = game.numMafia):
     user = ctx.author
     channel = ctx.channel
    
-    await game.startGame(author, user, channel, numTown, numMafia)
+    await game.startSetup(author, user, channel, numTown, numMafia)
 
 @bot.command(name = 'end-mafia')
 async def end_mafia(ctx):
@@ -39,6 +39,12 @@ async def end_mafia(ctx):
     channel = ctx.channel
    
     await game.stopGame(author, user, channel)
+
+@bot.command(name = 'run-game')
+async def run_game(ctx):
+    channel = ctx.channel
+   
+    await game.runGame(channel)
 
 @bot.command(name = 'in')
 async def opt_in(ctx):
@@ -81,13 +87,6 @@ async def vote_count(ctx):
     channel = ctx.channel
 
     await game.voteCount(channel)
-
-
-@bot.command(name = 'vote-count2')
-async def vote_count2(ctx):
-    channel = ctx.channel
-
-    await game.voteCount2(channel)
 
 
 @bot.command(name = 'force-kill')
@@ -168,4 +167,13 @@ async def vote_dict(ctx):
 
     await game.getVoteDict(channel)
 
+
+@bot.command(name = 'timer')
+async def timer(ctx):
+    channel = ctx.channel
+
+    await game.getPhaseTimeRemaining(channel)
+
+
 bot.run(TOKEN)
+

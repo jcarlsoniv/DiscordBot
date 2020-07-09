@@ -2,6 +2,8 @@ import os
 import random
 import discord
 import pandas as pd
+import time
+import copy
 
 from dotenv import load_dotenv
 
@@ -20,6 +22,9 @@ class Game:
         self.endReason = ''
         self.dayCounter = 0
         self.nightCounter = 0
+        self.phaseTime = 0
+        self.phaseLength = 10
+        self.gameStart = ''
         self.playerList = []
         self.teamList = []
         self.roleList = []
@@ -39,7 +44,7 @@ class Game:
     #    return self.gameStatus
     
 
-    async def startGame(self, author, user, channel, numTown: int, numMafia: int):
+    async def startSetup(self, author, user, channel, numTown: int, numMafia: int):
         
         #Check Mafia <= Town/2
         
@@ -49,6 +54,7 @@ class Game:
             self.gameStatus = 'Active'
             self.numTown = numTown
             self.numMafia = numMafia
+
 
             #Set game initiator as mafia host
             ###Actually implement Mafia Host role
@@ -106,6 +112,7 @@ class Game:
                 self.gameEnd = f'Night{self.nightCounter}'
             self.dayCounter = 0
             self.nightCounter = 0
+            self.phaseTime = 0
             self.playerList = []
             self.teamList = []
             self.roleList = []
@@ -240,6 +247,31 @@ class Game:
             await self.startDay(channel)
 
 
+    async def runGame(self, channel):
+        self.gameStart = time.time()
+        phaseEndTime = copy.copy(self.gameStart)
+
+        await self.startDay(channel)
+
+        x = 0
+
+        #WIN CONDITION CHECK
+        while x < 4:
+            elapsed = 0
+            while elapsed < self.phaseLength:
+                elapsed = time.time() - phaseEndTime
+                #await channel.send(f'{elapsed} elapsed.')
+                time.sleep(1)
+
+            await self.phaseChange(channel)
+            phaseEndTime = time.time()
+            x += 1
+
+#########################################################################################################################
+    #async def getPhaseTimeRemaining(self, channel):
+        
+
+
     async def killPlayer(self, channel, player):
         p = await self.getPlayer(player)
 
@@ -289,7 +321,7 @@ class Game:
   
         p.hasVoted = True
 
-        await self.voteCount2(channel)
+        await self.voteCount(channel)
 
       
 ####################################################################          
@@ -323,7 +355,7 @@ class Game:
                     v.remove(player)
                 index += 1 
 
-        await self.voteCount2(channel)
+        await self.voteCount(channel)
 
         p.hasVoted = False
 
@@ -349,31 +381,12 @@ class Game:
             #await channel.send('A game has not been started yet. Type *play-mafia to start one.')
         #else:
         await channel.send(self.runningVotesDict)
-
+     
+     
     async def voteCount(self, channel):
         #Improve formatting for non-voters
-
-
-##### THIS FUNCTION IS NOW BROKEN
-        ## REFACTOR WITH lynchTarget IN newVote
-        targetList = []
-
-        for v in self.voteList:
-            if v.voteDay == self.dayCounter and not any(t == v.voteTarget for t in targetList):
-                targetList.append(v.voteTarget)
-
-        for target in targetList:
-            targetCounter = 0
-            for v in self.voteList:
-                if (v.voteTarget == target and v.voteDay == self.dayCounter):
-                    targetCounter += 1
-            await channel.send(f'{target} ({targetCounter}): ' + ', '.join([v.voter for v in self.voteList if v.voteTarget == target and v.voteDay == self.dayCounter]))
-        
-
-    async def voteCount2(self, channel):
-        #Improve formatting for non-voters
         self.voteCounter = pd.DataFrame(columns = ['Player', 'Votes'])
-        voteCountOutput = []
+        voteCountJoined = []
         
 
         for p in self.runningVotesDict['Player']:
@@ -383,11 +396,9 @@ class Game:
 
             self.voteCounter = self.voteCounter.append({'Player': p, 'Votes': pd.to_numeric(numVotes)}, ignore_index = True)
              
-            voteCountOutput.append(f'{p} ({numVotes}): ' + ', '.join(lov for lov in listOfVoters))
+            voteCountJoined.append(f'{p} ({numVotes}): ' + ', '.join(lov for lov in listOfVoters))
 
-        print('\n'.join(vco for vco in voteCountOutput))
-
-
+        voteCountOutput = '\n'.join(voteCountJoined)
 
 
         embed = discord.Embed(
@@ -442,6 +453,7 @@ class Game:
 ###############################################################################################
 #######################################   BACKLOG    ##########################################
 
+### TIME-BASED VOTING LIMIT
 ### LOWER() CHECK ON VOTES
 ### ADD PHASE STATUS CHECKS FOR ALL ACTIONS
 ### ADD ALIVE STATUS CHECKS
@@ -450,10 +462,12 @@ class Game:
 ### ADD WIN CONDITION CHECKS
 ### ADD FUNCTION FOR CURRENT DAY'S VOTES
 ### NO LYNCH VS NO VOTE
-### TIME STAMP - PYTZ
+### TIME STAMP ON VOTES
+### LYNCH TARGET LOGIC
+### TURN VOTE LIST INTO FULL AUDIT TRAIL
+
 
 ### TRACK VOTE CHANGES WITHIN THE SAME DAY
-### TIME-BASED VOTING LIMIT
 ### SPECIFIC CHANNEL WITH ALIVE/DEAD ROLES, MUTING DEAD PLAYERS
 ### MESSAGE FORMATTING
 
@@ -499,11 +513,12 @@ class Role:
 
 class Vote:
 
-    def __init__(self, Day, Voter, VoteTarget = 'no one'):
+    def __init__(self, Day, Voter, VoteTarget = 'no one'):#, voteTime):
         #Make Voter/VoteTarget Player() class?
         self.voter = Voter
         self.voteTarget = VoteTarget
         self.voteDay = Day
+        #self.voteTime = voteTime
 
     def __str__(self):
         return f'{self.voter} is voting for {self.voteTarget} on Day {self.voteDay}'
